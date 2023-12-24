@@ -10,6 +10,7 @@
 #include <linux/of_device.h>
 #include <linux/delay.h>
 #include <linux/mmc/mmc.h>
+#include <linux/mmc/slot-gpio.h>
 #include <linux/pm_runtime.h>
 #include <linux/pm_opp.h>
 #include <linux/slab.h>
@@ -37,6 +38,10 @@
 #include "../core/core.h"
 #include <linux/qtee_shmbridge.h>
 #include <linux/crypto-qti-common.h>
+
+#if IS_ENABLED(CONFIG_SEC_MMC_FEATURE)
+#include "mmc-sec-feature.h"
+#endif
 
 #define CORE_MCI_VERSION		0x50
 #define CORE_VERSION_MAJOR_SHIFT	28
@@ -4234,6 +4239,19 @@ static void sdhci_msm_hw_reset(struct sdhci_host *host)
 	return;
 }
 
+#if IS_ENABLED(CONFIG_SEC_MMC_FEATURE)
+void sdhci_msm_sec_request_done(struct sdhci_host *host,
+		struct mmc_request *mrq)
+{
+	struct mmc_host *mmc = host->mmc;
+
+	mmc_sd_sec_check_req_err(mmc, mrq);
+
+	/* call mmc_request_done() to finish processing an MMC request */
+	mmc_request_done(mmc, mrq);
+}
+#endif
+
 static const struct sdhci_ops sdhci_msm_ops = {
 	.reset = sdhci_msm_reset,
 	.set_clock = sdhci_msm_set_clock,
@@ -4249,6 +4267,9 @@ static const struct sdhci_ops sdhci_msm_ops = {
 	.set_power = sdhci_set_power_noreg,
 	.hw_reset = sdhci_msm_hw_reset,
 	.set_timeout = sdhci_msm_set_timeout,
+#if IS_ENABLED(CONFIG_SEC_MMC_FEATURE)
+	.request_done = sdhci_msm_sec_request_done,
+#endif
 };
 
 static const struct sdhci_pltfm_data sdhci_msm_pdata = {
@@ -4877,7 +4898,7 @@ static int sdhci_msm_setup_ice_clk(struct sdhci_msm_host *msm_host,
 
 static void sdhci_msm_set_caps(struct sdhci_msm_host *msm_host)
 {
-	msm_host->mmc->caps |= MMC_CAP_AGGRESSIVE_PM;
+	//msm_host->mmc->caps |= MMC_CAP_AGGRESSIVE_PM;
 	msm_host->mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY | MMC_CAP_NEED_RSP_BUSY;
 }
 /* RUMI W/A for SD card */
@@ -4932,6 +4953,43 @@ static void sdhci_msm_set_sdio_pm_flag(void *unused, struct mmc_host *host)
 {
 	host->pm_flags &= ~MMC_PM_WAKE_SDIO_IRQ;
 }
+
+/* add sdcard slot info for factory mode at 2023/04/27
+ *    begin
+ *    */
+
+static struct sdhci_host *card_host = NULL;
+
+static ssize_t card_slot_status_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	pr_err("card_slot_status_show enter! mmc_host name:%s\n", mmc_hostname(card_host->mmc));
+	return snprintf(buf, PAGE_SIZE, "%d\n", mmc_gpio_get_cd(card_host->mmc));
+}
+
+static DEVICE_ATTR(card_slot_status, S_IRUGO , card_slot_status_show, NULL);
+
+static int card_slot_init_device_name(void)
+{
+	int32_t error = 0;
+	struct mmc_host *mmc = card_host->mmc;
+
+	error = device_create_file(&mmc->class_dev, &dev_attr_card_slot_status);
+	if (error < 0) {
+		pr_err("%s: card_slot card_slot_status create failed\n", __func__);
+		return -ENOSYS;
+	}
+	return 0 ;
+}
+
+static void card_slot_exit_device_name(void)
+{
+	struct mmc_host *mmc = card_host->mmc;
+	device_remove_file(&mmc->class_dev, &dev_attr_card_slot_status);
+	card_host = NULL;
+}
+/* add sdcard slot info for factory mode
+ *    end
+ *    */
 
 static int sdhci_msm_probe(struct platform_device *pdev)
 {
@@ -5274,6 +5332,10 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	/* Initialize sysfs entries */
 	sdhci_msm_init_sysfs_gating_qos(dev);
 
+#if IS_ENABLED(CONFIG_SEC_MMC_FEATURE)
+	sd_sec_set_features(host->mmc, pdev);
+#endif
+
 	if (of_property_read_bool(node, "supports-cqe"))
 		ret = sdhci_msm_cqe_add_host(host, pdev);
 	else
@@ -5300,6 +5362,12 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 
 	if (msm_host->mmc->card && mmc_card_sdio(msm_host->mmc->card))
 		register_trace_android_vh_mmc_sdio_pm_flag_set(sdhci_msm_set_sdio_pm_flag, NULL);
+
+	card_host = platform_get_drvdata(pdev);
+	ret = card_slot_init_device_name();
+	if (ret < 0) {
+		dev_err(&pdev->dev, "add card slot status sys interface failed!\n");
+	}
 
 	return 0;
 
@@ -5349,6 +5417,8 @@ static int sdhci_msm_remove(struct platform_device *pdev)
 	pltfm_host = sdhci_priv(host);
 	msm_host = sdhci_pltfm_priv(pltfm_host);
 	r = msm_host->sdhci_qos;
+
+	card_slot_exit_device_name();
 
 	dead = (readl_relaxed(host->ioaddr + SDHCI_INT_STATUS) ==
 		    0xffffffff);

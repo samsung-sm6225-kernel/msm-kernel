@@ -62,3 +62,9 @@ obj-$(CONFIG_HI6421V600_IRQ)	+= hi6421v600-irq.o
 obj-$(CONFIG_UID_SYS_STATS)	+= uid_sys_stats.o
 obj-$(CONFIG_OPEN_DICE)		+= open-dice.o
 obj-$(CONFIG_QSEECOM_PROXY) 	+= qseecom_proxy.o
+ifeq ($(SEC_SAMSUNG_EXPERIENCE_PLATFORM_CATEGORY),FACTORY)
+$(warning "sensor node is factory,add compile")
+obj-m                           += sensor_info/sensor_node.o
+else
+$(warning "sensor node is not factory")
+endif

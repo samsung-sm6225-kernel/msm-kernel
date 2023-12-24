@@ -9,7 +9,8 @@ MSM_ARCH=bengal
 VARIANTS=(consolidate gki)
 [ -z "${VARIANT}" ] && VARIANT=consolidate
 
-ABL_SRC=bootable/bootloader/edk2
+ABL_SRC=
+SKIP_COMPILE_ABL=1
 BOOT_IMAGE_HEADER_VERSION=4
 BASE_ADDRESS=0x80000000
 PAGE_SIZE=4096

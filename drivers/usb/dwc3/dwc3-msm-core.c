@@ -3490,13 +3490,20 @@ static int dwc3_msm_prepare_suspend(struct dwc3_msm *mdwc, bool ignore_p3_state)
 		if (reg & PWR_EVNT_LPM_IN_L2_MASK)
 			break;
 	}
-	if (!(reg & PWR_EVNT_LPM_IN_L2_MASK))
+	if (!(reg & PWR_EVNT_LPM_IN_L2_MASK)){
 		dev_err(mdwc->dev, "could not transition HS PHY to L2\n");
-
+		/* Mark error for host mode*/
+		if (mdwc->in_host_mode) {
+			dwc3_msm_write_reg(mdwc->base, PWR_EVNT_IRQ_STAT_REG,
+		PWR_EVNT_LPM_IN_L2_MASK);
+			schedule_work(&mdwc->resume_work);
+			return 0;
+			}
+		}
 	/* Clear L2 event bit */
 	dwc3_msm_write_reg(mdwc->base, PWR_EVNT_IRQ_STAT_REG,
 		PWR_EVNT_LPM_IN_L2_MASK);
-
+	
 	return 0;
 }
 
@@ -6171,7 +6178,8 @@ static int dwc3_msm_host_notifier(struct notifier_block *nb,
 		/* USB root hub device */
 		if (event == USB_DEVICE_ADD) {
 			pm_runtime_use_autosuspend(&udev->dev);
-			pm_runtime_set_autosuspend_delay(&udev->dev, 1000);
+			pm_runtime_set_autosuspend_delay(&udev->dev, 2000);
+			pr_err("%s ---> pm_runtime_set_autosuspend_delay",__func__);
 		}
 	}
 

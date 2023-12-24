@@ -163,6 +163,9 @@ static bool get_dload_mode(void)
 
 static void enable_emergency_dload_mode(void)
 {
+	if (IS_ENABLED(CONFIG_SEC_QC_MSM_POWEROFF))
+		return;
+
 	if (emergency_dload_mode_addr) {
 		__raw_writel(EMERGENCY_DLOAD_MAGIC1,
 				emergency_dload_mode_addr);
@@ -523,6 +526,8 @@ static void do_msm_poweroff(void)
 	pr_err("Powering off has failed\n");
 }
 
+static void sec_qc_msm_restart_probe(struct platform_device *pdev);
+
 static int msm_restart_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -565,6 +570,8 @@ static int msm_restart_probe(struct platform_device *pdev)
 	restart_nb.notifier_call = do_msm_restart;
 	restart_nb.priority = 200;
 	register_restart_handler(&restart_nb);
+
+	sec_qc_msm_restart_probe(pdev);
 
 	set_dload_mode(download_mode);
 	if (!download_mode)
@@ -613,3 +620,68 @@ module_exit(msm_restart_exit);
 
 MODULE_DESCRIPTION("MSM Poweroff Driver");
 MODULE_LICENSE("GPL v2");
+
+#if IS_ENABLED(CONFIG_SEC_QC_MSM_POWEROFF)
+static struct notifier_block restart_pre_nb;
+static struct notifier_block restart_post_nb;
+
+static int do_msm_restart_pre(struct notifier_block *unused, unsigned long action,
+			   void *arg)
+{
+	const char *cmd = arg;
+	const char *cmd_filtered;
+
+	pr_notice("Going down for restart now\n");
+
+	if (!strncmp(cmd, "edl", 3))
+		cmd_filtered = "";
+	else
+		cmd_filtered = cmd;
+
+	msm_restart_prepare(cmd_filtered);
+
+	return NOTIFY_OK;
+}
+
+static int do_msm_restart_post(struct notifier_block *unused, unsigned long action,
+			   void *arg)
+{
+	deassert_ps_hold();
+
+	msleep(10000);
+
+	return NOTIFY_OK;
+}
+
+static void sec_qc_msm_restart_probe(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+
+	dev_warn(dev, "'restart_nb' is forcely unregistered by %s\n", __func__);
+	unregister_restart_handler(&restart_nb);
+
+	restart_pre_nb.notifier_call = do_msm_restart_pre;
+	restart_pre_nb.priority = 240;
+	register_restart_handler(&restart_pre_nb);
+
+	restart_post_nb.notifier_call = do_msm_restart_post;
+	restart_post_nb.priority = 200;
+	register_restart_handler(&restart_post_nb);
+}
+
+int msm_get_restart_mode(void)
+{
+	return restart_mode;
+}
+EXPORT_SYMBOL(msm_get_restart_mode);
+
+void msm_set_dload_mode(int on)
+{
+	set_dload_mode(on);
+
+	pr_warn("set_dload_mode <%d> (%pS)\n", on, __builtin_return_address(0));
+}
+EXPORT_SYMBOL(msm_set_dload_mode);
+#else
+static void sec_qc_msm_restart_probe(struct platform_device *pdev) {}
+#endif

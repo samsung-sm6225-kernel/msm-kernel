@@ -9,8 +9,10 @@ build.config.msm.gen4auto.lxc
 build.config.msm.sdxpinn
 build.config.msm.sdxbaagha
 build.config.msm.bengal
+build.config.msm.m269
 build.config.msm.sa410m
 build.config.msm.monaco
 build.config.msm.kona
 build.config.msm.kona.le
 build.config.msm.qcs405
+build.config.msm.m269.sec
