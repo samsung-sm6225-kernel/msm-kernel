@@ -12,8 +12,15 @@
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include <linux/mailbox_controller.h>
+#include <linux/ipc_logging.h>
 
 #define QCOM_APCS_IPC_BITS	32
+#define IPC_LOG_PAGE_CNT    64
+
+static void *apcs_ipc_log;
+
+#define APCS_INFO(ctx, x, ...) \
+    ipc_log_string(ctx, x, ##__VA_ARGS__)
 
 struct qcom_apcs_ipc {
 	struct mbox_controller mbox;
@@ -95,11 +102,15 @@ static const struct regmap_config apcs_regmap_config = {
 
 static int qcom_apcs_ipc_send_data(struct mbox_chan *chan, void *data)
 {
+	int ret;
 	struct qcom_apcs_ipc *apcs = container_of(chan->mbox,
 						  struct qcom_apcs_ipc, mbox);
 	unsigned long idx = (unsigned long)chan->con_priv;
 
-	return regmap_write(apcs->regmap, apcs->offset, BIT(idx));
+    ret = regmap_write(apcs->regmap, apcs->offset, BIT(idx));
+    APCS_INFO(apcs_ipc_log, "[syh]write[offset:0x%lx val:0x%x], ret:%d\n", apcs->offset, BIT(idx), ret);
+
+    return ret;
 }
 
 static const struct mbox_chan_ops qcom_apcs_ipc_ops = {
@@ -161,6 +172,8 @@ static int qcom_apcs_ipc_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, apcs);
+	
+	apcs_ipc_log = ipc_log_context_create(IPC_LOG_PAGE_CNT, "apcs", 0);
 
 	return 0;
 }

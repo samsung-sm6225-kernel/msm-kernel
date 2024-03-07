@@ -598,7 +598,7 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 
 suspend:
 	if (suspend) { /* Bus suspend */
-		if (phy->cable_connected) {
+		if (phy->cable_connected ||(phy->phy.flags & PHY_HOST_MODE)) {
 			/* Enable auto-resume functionality during host mode
 			 * bus suspend with some FS/HS peripheral connected.
 			 */
@@ -852,6 +852,11 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 	phy = devm_kzalloc(dev, sizeof(*phy), GFP_KERNEL);
 	if (!phy) {
 		ret = -ENOMEM;
+		goto err_ret;
+	}
+	pr_err("[syh] msm_hsphy_probe \n");
+	if (dev == NULL) {
+		ret = -ENODEV;
 		goto err_ret;
 	}
 
