@@ -924,6 +924,11 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto err_ret;
 	}
+	pr_err("[syh] msm_hsphy_probe \n");
+	if (dev == NULL) {
+		ret = -ENODEV;
+		goto err_ret;
+	}
 
 	driver_data = of_device_get_match_data(dev);
 	phy->phy_priv_data = driver_data;

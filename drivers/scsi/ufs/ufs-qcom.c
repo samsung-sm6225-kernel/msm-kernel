@@ -42,6 +42,10 @@
 #include <linux/crypto-qti-common.h>
 #endif
 
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+#include "ufs-sec-feature.h"
+#endif
+
 #define UFS_QCOM_DEFAULT_DBG_PRINT_EN	\
 	(UFS_QCOM_DBG_PRINT_REGS_EN | UFS_QCOM_DBG_PRINT_TEST_BUS_EN)
 
@@ -1706,6 +1710,11 @@ out:
 	ufs_qcom_ice_disable(host);
 
 	cancel_dwork_unvote_cpufreq(hba);
+
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	if (pm_op == UFS_SHUTDOWN_PM)
+		ufs_sec_print_err_info(hba);
+#endif
 	return err;
 }
 
@@ -2442,6 +2451,12 @@ static int ufs_qcom_apply_dev_quirks(struct ufs_hba *hba)
 
 	if (hba->dev_info.wmanufacturerid == UFS_VENDOR_MICRON)
 		hba->dev_quirks |= UFS_DEVICE_QUIRK_DELAY_BEFORE_LPM;
+
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	/* check only at the first init */
+	if (!(hba->eh_flags || hba->pm_op_in_progress))
+		ufs_sec_set_features(hba);
+#endif
 
 	return err;
 }
@@ -3819,6 +3834,7 @@ cell_put:
  */
 static int ufs_qcom_init(struct ufs_hba *hba)
 {
+	int retries;
 	int err, host_id = 0;
 	struct device *dev = hba->dev;
 	struct ufs_qcom_host *host;
@@ -3866,6 +3882,9 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 	 * skip devoting it during aggressive clock gating. This clock
 	 * will still be gated off during runtime suspend.
 	 */
+	dev_err(dev, "[SYH]%s: entered and start to get ufsphy\n", __func__);
+
+for (retries = 0; retries < 10; retries++) {
 	host->generic_phy = devm_phy_get(dev, "ufsphy");
 
 	if (host->generic_phy == ERR_PTR(-EPROBE_DEFER)) {
@@ -3882,10 +3901,20 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 			host->generic_phy = NULL;
 		} else {
 			err = PTR_ERR(host->generic_phy);
-			ufs_qcom_msg(ERR, dev, "%s: PHY get failed %d\n", __func__, err);
-			goto out_variant_clear;
+			ufs_qcom_msg(ERR, dev, "%s: PHY get failed %d retry %d", __func__, err, retries);
+			if(err == -ENODEV){
+				err = -EPROBE_DEFER;
+				if(retries == 9){
+					goto out_variant_clear;
+				}
+			}
 		}
+	} else {
+		ufs_qcom_msg(ERR, dev, "%s: PHY get success %d", __func__, retries);
+		break;
 	}
+	usleep_range(1000, 1100);
+}
 
 	host->device_reset = devm_gpiod_get_optional(dev, "reset",
 						     GPIOD_OUT_HIGH);
@@ -4522,6 +4551,10 @@ static void ufs_qcom_event_notify(struct ufs_hba *hba,
 
 	if (evt_valid)
 		host->valid_evt_cnt[evt]++;
+
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	ufs_sec_inc_op_err(hba, evt, data);
+#endif
 }
 
 void ufs_qcom_print_hw_debug_reg_all(struct ufs_hba *hba,
@@ -5438,6 +5471,10 @@ static void ufs_qcom_register_hooks(void)
 	register_trace_android_vh_ufs_update_sdev(ufs_qcom_update_sdev, NULL);
 	register_trace_android_vh_ufs_prepare_command(
 				ufs_qcom_hook_prepare_command, NULL);
+
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	ufs_sec_register_vendor_hooks();
+#endif
 }
 
 #ifdef CONFIG_ARM_QCOM_CPUFREQ_HW
@@ -5538,6 +5575,9 @@ static int ufs_qcom_probe(struct platform_device *pdev)
 		return err;
 	}
 
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	ufs_sec_init_logging(dev);
+#endif
 	/* Perform generic probe */
 	err = ufshcd_pltfrm_init(pdev, &ufs_hba_qcom_vops);
 	if (err)
@@ -5578,6 +5618,10 @@ static int ufs_qcom_remove(struct platform_device *pdev)
 	pm_runtime_get_sync(&(pdev)->dev);
 	for (i = 0; i < r->num_groups; i++, qcg++)
 		remove_group_qos(qcg);
+
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	ufs_sec_remove_features(hba);
+#endif
 
 	ufshcd_remove(hba);
 	return 0;

@@ -978,7 +978,7 @@ endif
 
 ifdef CONFIG_SHADOW_CALL_STACK
 CC_FLAGS_SCS	:= -fsanitize=shadow-call-stack
-KBUILD_CFLAGS	+= $(CC_FLAGS_SCS)
+KBUILD_CFLAGS_MODULE	+= $(CC_FLAGS_SCS)
 export CC_FLAGS_SCS
 endif
 
@@ -1028,7 +1028,7 @@ endif
 
 # If LTO flags are filtered out, we must also filter out CFI.
 CC_FLAGS_LTO	+= $(CC_FLAGS_CFI)
-KBUILD_CFLAGS	+= $(CC_FLAGS_CFI)
+KBUILD_CFLAGS_MODULE	+= $(CC_FLAGS_CFI)
 export CC_FLAGS_CFI
 endif
 
@@ -1195,8 +1195,8 @@ export MODULES_NSDEPS := $(extmod_prefix)modules.nsdeps
 
 PHONY += headers
 
-ext-mod-dir := ../sm8550-modules
-ext-mod-dirs := $(ext-mod-dir)/qcom/opensource/audio-kernel $(ext-mod-dir)/qcom/opensource/display-drivers $(ext-mod-dir)/qcom/opensource/video-kernel $(ext-mod-dir)/nxp/opensource/driver
+ext-mod-dir := ../sm6225-modules
+ext-mod-dirs := $(ext-mod-dir)/qcom/opensource/audio-kernel $(ext-mod-dir)/qcom/opensource/display-drivers $(ext-mod-dir)/qcom/opensource/video-kernel
 ext-mod-dirs := $(subst $(srctree)/,,$(ext-mod-dirs))
 
 #Default location for installed headers
@@ -1289,6 +1289,7 @@ dt_binding_check: scripts_dtc
 
 
 ifeq ($(KBUILD_EXTMOD),)
+-include $(srctree)/extmod.mk
 core-y			+= kernel/ certs/ mm/ fs/ ipc/ security/ crypto/
 core-$(CONFIG_BLOCK)	+= block/
 core-$(CONFIG_IO_URING)	+= io_uring/
@@ -1366,7 +1367,7 @@ $(sort $(vmlinux-deps) $(subdir-modorder)): descend ;
 
 filechk_kernel.release = \
 	echo "$(KERNELVERSION)$$($(CONFIG_SHELL) $(srctree)/scripts/setlocalversion \
-		--save-tag $(srctree) $(BRANCH) $(KMI_GENERATION))"
+		--save-tag $(srctree) $(GOOGLE_BRANCH) $(KMI_GENERATION))"
 
 # Store (new) KERNELRELEASE string in include/config/kernel.release
 include/config/kernel.release: FORCE
@@ -1419,7 +1420,7 @@ uapi-asm-generic:
 # KERNELRELEASE can change from a few different places, meaning version.h
 # needs to be updated, so this check is forced on all builds
 
-uts_len := 64
+uts_len := 96
 define filechk_utsrelease.h
 	if [ `echo -n "$(KERNELRELEASE)" | wc -c ` -gt $(uts_len) ]; then \
 	  echo '"$(KERNELRELEASE)" exceeds $(uts_len) characters' >&2;    \
@@ -2079,7 +2080,7 @@ checkstack:
 
 kernelrelease:
 	@echo "$(KERNELVERSION)$$($(CONFIG_SHELL) $(srctree)/scripts/setlocalversion \
-		$(srctree) $(BRANCH) $(KMI_GENERATION))"
+		$(srctree) $(GOOGLE_BRANCH) $(KMI_GENERATION))"
 
 kernelversion:
 	@echo $(KERNELVERSION)
